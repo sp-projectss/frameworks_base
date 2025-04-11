@@ -82,6 +82,7 @@ static const char PRODUCT_SHUTDOWNANIMATION_FILE[] = "/product/media/shutdownani
 static const char SYSTEM_SHUTDOWNANIMATION_FILE[] = "/system/media/shutdownanimation.zip";
 
 static const char* const BOOT_ANIMATION_FILES[] = {
+    "/data/misc/bootanim/bootanimation.zip",
     "/product/media/bootanimation.zip",
     "/product/media/bootanimation_evo_reveal.zip",
     "/product/media/bootanimation_aokp.zip",
@@ -94,8 +95,7 @@ static const char* const BOOT_ANIMATION_FILES[] = {
     "/product/media/bootanimation_pac.zip",
     "/product/media/bootanimation_rr.zip",
     "/product/media/bootanimation_slim.zip",
-    "/product/media/bootanimation_valorant.zip",
-    "/data/misc/bootanim/bootanimation.zip"
+    "/product/media/bootanimation_valorant.zip"
 };
 
 static constexpr const char* PRODUCT_USERSPACE_REBOOT_ANIMATION_FILE = "/product/media/userspace-reboot.zip";
@@ -733,6 +733,23 @@ bool BootAnimation::findBootAnimationFileInternal(const std::vector<std::string>
 
 void BootAnimation::findBootAnimationFile() {
     ATRACE_CALL();
+    
+    if (access(BOOT_ANIMATION_FILES[0], R_OK) == 0) {
+        ALOGD("Using custom boot animation: %s", BOOT_ANIMATION_FILES[0]);
+        mZipFileName = BOOT_ANIMATION_FILES[0];
+        return;
+    }
+
+    for (size_t i = 1; i < sizeof(BOOT_ANIMATION_FILES) / sizeof(BOOT_ANIMATION_FILES[0]); i++) {
+        if (access(BOOT_ANIMATION_FILES[i], R_OK) == 0) {
+            ALOGD("Falling back to boot animation: %s", BOOT_ANIMATION_FILES[i]);
+            mZipFileName = BOOT_ANIMATION_FILES[i];
+            return;
+        }
+    }
+
+    ALOGW("No valid boot animation file found in BOOT_ANIMATION_FILES");
+    
     char value[PROPERTY_VALUE_MAX];
     property_get("persist.sys.bootanimation_style", value, "0");
     const int bootAnimStyle = atoi(value);
