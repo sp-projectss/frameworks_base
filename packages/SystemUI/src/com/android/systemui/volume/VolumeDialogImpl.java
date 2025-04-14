@@ -386,6 +386,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
     // Optional actions for soundDose
     private Optional<ImmutableList<CsdWarningAction>>
             mCsdWarningNotificationActions = Optional.of(ImmutableList.of());
+    private boolean mShowAppVolume;
 
     public VolumeDialogImpl(
             Context context,
@@ -476,18 +477,24 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
             volumePanelOnLeftObserver.onChange(true);
         }
 
-        ContentObserver volumeTimeoutObserver = new ContentObserver(null) {
+        ContentObserver settingsObserver = new ContentObserver(null) {
             @Override
             public void onChange(boolean selfChange) {
                 mDialogTimeoutMillis = mSecureSettings.get().getIntForUser(
                         Settings.Secure.VOLUME_DIALOG_DISMISS_TIMEOUT,
                         DIALOG_TIMEOUT_MILLIS, UserHandle.USER_CURRENT);
+                mShowAppVolume = Settings.System.getIntForUser(mContext.getContentResolver(),
+                        Settings.System.SHOW_APP_VOLUME,
+                        0, UserHandle.USER_CURRENT) == 1;
             }
         };
         mContext.getContentResolver().registerContentObserver(
                 Settings.Secure.getUriFor(Settings.Secure.VOLUME_DIALOG_DISMISS_TIMEOUT),
-                false, volumeTimeoutObserver);
-        volumeTimeoutObserver.onChange(true);
+                false, settingsObserver);
+        mContext.getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(Settings.System.SHOW_APP_VOLUME),
+                false, settingsObserver);
+        settingsObserver.onChange(true);
 
         initDimens();
 
@@ -1603,10 +1610,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
 
     private void initAppVolumes() {
         clearAppVolumes();
-        boolean showAppVolume = Settings.System.getIntForUser(mContext.getContentResolver(),
-                Settings.System.SHOW_APP_VOLUME,
-                0, UserHandle.USER_CURRENT) == 1;
-        if (!showAppVolume || mAppVolumeView == null) {
+        if (!mShowAppVolume || mAppVolumeView == null) {
             return;
         }
         boolean appActive = false;
@@ -2161,13 +2165,13 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
             final boolean isExpandableRow = isStreamRow || isAppRow;
             final boolean shouldBeVisible = shouldBeVisibleH(row, activeRow);
             // Hide stream rows when app rows expanded and vice versa
-            final boolean shouldBeInvisible =
+            final boolean shouldBeGone =
                     (isStreamRow && appsExpanded) || (isAppRow && expanded) || collapsed;
 
             if (!isExpandableRow) {
                 Util.setVisOrGone(row.view, shouldBeVisible);
-            } else if (shouldBeInvisible) {
-                row.view.setVisibility(View.INVISIBLE);
+            } else if (shouldBeGone) {
+                Util.setVisOrGone(row.view, false);
             }
 
             if ((shouldBeVisible || isExpandableRow)
@@ -3223,7 +3227,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
 
         @Override
         public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-            if (getActiveRow().equals(mRow) && mRow.slider.getVisibility() == VISIBLE) {
+            if (!mRow.isAppVolume && getActiveRow().equals(mRow) && mRow.slider.getVisibility() == VISIBLE) {
                 if (fromUser || mRow.animTargetProgress == progress) {
                     // Deliver user-generated slider haptics immediately, or when the animation
                     // completes
@@ -3234,6 +3238,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
                     + " onProgressChanged " + progress + " fromUser=" + fromUser);
             if (!fromUser) return;
             if (mRow.isAppVolume) {
+                mRow.deliverOnProgressChangedHaptics(fromUser, progress);
                 mActiveAppRowPackage = mRow.packageName;
                 final float vol = progress * 0.01f;
                 if (D.BUG) Log.d(TAG, "set app " + mRow.packageName + " volume to " + vol);
